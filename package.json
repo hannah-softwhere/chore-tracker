@@ -1,5 +1,5 @@
 {
-  "name": "nextjs",
+  "name": "chore-tracker",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,7 +11,10 @@
   "dependencies": {
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.4.7"
+    "next": "15.4.7",
+    "lucide-react": "^0.263.1",
+    "uuid": "^9.0.1",
+    "date-fns": "^2.30.0"
   },
   "devDependencies": {
     "typescript": "^5",
@@ -19,6 +22,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "@types/uuid": "^9.0.7"
   }
 }
