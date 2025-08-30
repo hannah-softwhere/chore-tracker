@@ -10,9 +10,9 @@ type CompletedFilter = 'all' | 'week' | 'month' | '3months';
 interface ChoreTemplate {
   id: string;
   title: string;
-  amount: number;
+  amount: string;
   frequency: Frequency;
-  createdAt: Date;
+  createdAt: string;
   isActive: boolean;
 }
 
@@ -20,17 +20,17 @@ interface ChoreInstance {
   id: string;
   templateId: string;
   title: string;
-  amount: number;
+  amount: string;
   frequency: Frequency;
-  dueDate: Date;
+  dueDate: string;
   completed: boolean;
-  completedAt?: Date;
+  completedAt?: string;
 }
 
 interface Payout {
   id: string;
-  amount: number;
-  date: Date;
+  amount: string;
+  date: string;
 }
 
 export default function ChoreTracker() {
@@ -49,246 +49,191 @@ export default function ChoreTracker() {
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [loading, setLoading] = useState(true);
 
-  // Load data from localStorage on component mount
+  // Load data from API on component mount
   useEffect(() => {
-    const savedTemplates = localStorage.getItem('choreTemplates');
-    if (savedTemplates) {
-      const parsedTemplates = JSON.parse(savedTemplates).map((template: any) => ({
-        ...template,
-        createdAt: new Date(template.createdAt)
-      }));
-      setChoreTemplates(parsedTemplates);
-    }
-
-    const savedInstances = localStorage.getItem('choreInstances');
-    if (savedInstances) {
-      const parsedInstances = JSON.parse(savedInstances).map((instance: any) => ({
-        ...instance,
-        dueDate: new Date(instance.dueDate),
-        completedAt: instance.completedAt ? new Date(instance.completedAt) : undefined
-      }));
-      setChoreInstances(parsedInstances);
-    }
-
-    const savedPayouts = localStorage.getItem('payouts');
-    if (savedPayouts) {
-      const parsedPayouts = JSON.parse(savedPayouts).map((payout: any) => ({
-        ...payout,
-        date: new Date(payout.date)
-      }));
-      setPayouts(parsedPayouts);
-    }
+    loadData();
   }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load chore templates
+      const templatesResponse = await fetch('/api/chores');
+      const templates = await templatesResponse.json();
+      setChoreTemplates(templates);
+
+      // Load chore instances
+      const instancesResponse = await fetch('/api/instances');
+      const instances = await instancesResponse.json();
+      setChoreInstances(instances);
+
+      // Load payouts
+      const payoutsResponse = await fetch('/api/payouts');
+      const payoutsData = await payoutsResponse.json();
+      setPayouts(payoutsData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Calculate total earned whenever chore instances change
   useEffect(() => {
     const total = choreInstances
       .filter((instance: ChoreInstance) => instance.completed)
-      .reduce((sum: number, instance: ChoreInstance) => sum + instance.amount, 0);
+      .reduce((sum: number, instance: ChoreInstance) => sum + parseFloat(instance.amount), 0);
     setTotalEarned(total);
   }, [choreInstances]);
 
-  // Save data to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('choreTemplates', JSON.stringify(choreTemplates));
-  }, [choreTemplates]);
-
-  useEffect(() => {
-    localStorage.setItem('choreInstances', JSON.stringify(choreInstances));
-  }, [choreInstances]);
-
-  useEffect(() => {
-    localStorage.setItem('payouts', JSON.stringify(payouts));
-  }, [payouts]);
-
-  const generateChoreInstances = (template: ChoreTemplate, startDate: Date, count: number = 30) => {
-    const instances: ChoreInstance[] = [];
-    let currentDate = startOfDay(startDate);
-
-    for (let i = 0; i < count; i++) {
-      const instance: ChoreInstance = {
-        id: crypto.randomUUID(),
-        templateId: template.id,
-        title: template.title,
-        amount: template.amount,
-        frequency: template.frequency,
-        dueDate: new Date(currentDate),
-        completed: false
-      };
-      instances.push(instance);
-
-      // Calculate next due date based on frequency
-      switch (template.frequency) {
-        case 'daily':
-          currentDate = addDays(currentDate, 1);
-          break;
-        case 'weekly':
-          currentDate = addWeeks(currentDate, 1);
-          break;
-        case 'monthly':
-          currentDate = addMonths(currentDate, 1);
-          break;
-        case 'one-time':
-          // Only create one instance for one-time chores
-          break;
-      }
-
-      // Stop creating instances for one-time chores after the first one
-      if (template.frequency === 'one-time') break;
-    }
-
-    return instances;
-  };
-
-  const addChore = () => {
+  const addChore = async () => {
     if (!newChoreTitle.trim() || !newChoreAmount.trim()) return;
     
     const amount = parseFloat(newChoreAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    // Parse the date string and create a date in local timezone
-    const [year, month, day] = newChoreStartDate.split('-').map(Number);
-    const startDate = new Date(year, month - 1, day); // month is 0-indexed
-    if (isNaN(startDate.getTime())) return;
-
-    const template: ChoreTemplate = {
-      id: crypto.randomUUID(),
-      title: newChoreTitle.trim(),
-      amount: amount,
-      frequency: newChoreFrequency,
-      createdAt: new Date(),
-      isActive: true
-    };
-
-    // Generate initial instances starting from the selected date
-    const instances = generateChoreInstances(template, startDate);
-
-    setChoreTemplates((prev: ChoreTemplate[]) => [...prev, template]);
-    setChoreInstances((prev: ChoreInstance[]) => [...prev, ...instances]);
-    
-    setNewChoreTitle('');
-    setNewChoreAmount('');
-    setNewChoreFrequency('daily');
-    setNewChoreStartDate(format(new Date(), 'yyyy-MM-dd'));
-  };
-
-  const completeChoreInstance = (instanceId: string) => {
-    setChoreInstances((prev: ChoreInstance[]) => 
-      prev.map((instance: ChoreInstance) => {
-        if (instance.id === instanceId) {
-          return {
-            ...instance,
-            completed: true,
-            completedAt: new Date()
-          };
-        }
-        return instance;
-      })
-    );
-  };
-
-  const uncompleteChoreInstance = (instanceId: string) => {
-    setChoreInstances((prev: ChoreInstance[]) => 
-      prev.map((instance: ChoreInstance) => {
-        if (instance.id === instanceId) {
-          return {
-            ...instance,
-            completed: false,
-            completedAt: undefined
-          };
-        }
-        return instance;
-      })
-    );
-  };
-
-  const deleteChoreTemplate = (templateId: string) => {
-    setChoreTemplates((prev: ChoreTemplate[]) => 
-      prev.filter((template: ChoreTemplate) => template.id !== templateId)
-    );
-    setChoreInstances((prev: ChoreInstance[]) => 
-      prev.filter((instance: ChoreInstance) => instance.templateId !== templateId)
-    );
-  };
-
-  const deleteChoreInstance = (instanceId: string) => {
-    setChoreInstances((prev: ChoreInstance[]) => 
-      prev.filter((instance: ChoreInstance) => instance.id !== instanceId)
-    );
-  };
-
-  const updateChoreAmount = (templateId: string, newAmount: number) => {
-    // Update the template amount
-    setChoreTemplates((prev: ChoreTemplate[]) => 
-      prev.map((template: ChoreTemplate) => 
-        template.id === templateId 
-          ? { ...template, amount: newAmount }
-          : template
-      )
-    );
-
-    // Update all future instances (not completed and due date is in the future)
-    const today = startOfDay(new Date());
-    setChoreInstances((prev: ChoreInstance[]) => 
-      prev.map((instance: ChoreInstance) => {
-        if (instance.templateId === templateId && !instance.completed && isAfter(instance.dueDate, today)) {
-          return { ...instance, amount: newAmount };
-        }
-        return instance;
-      })
-    );
-
-    setEditingAmount(null);
-    setEditingTemplateId(null);
-  };
-
-  const getScheduleData = () => {
-    const today = startOfDay(new Date());
-    const scheduleData: { [key in Frequency]: Array<{
-      template: ChoreTemplate;
-      nextDueDate: Date | null;
-      lastCompletedDate: Date | null;
-      totalEarned: number;
-    }> } = {
-      'one-time': [],
-      'daily': [],
-      'weekly': [],
-      'monthly': []
-    };
-
-    choreTemplates.forEach((template: ChoreTemplate) => {
-      if (!template.isActive) return;
-
-      // Get all instances for this template
-      const instances = choreInstances.filter((instance: ChoreInstance) => 
-        instance.templateId === template.id
-      );
-
-      // Find next due date (earliest uncompleted instance)
-      const nextDueInstance = instances
-        .filter((instance: ChoreInstance) => !instance.completed)
-        .sort((a: ChoreInstance, b: ChoreInstance) => a.dueDate.getTime() - b.dueDate.getTime())[0];
-
-      // Find last completed date
-      const lastCompletedInstance = instances
-        .filter((instance: ChoreInstance) => instance.completed)
-        .sort((a: ChoreInstance, b: ChoreInstance) => b.completedAt!.getTime() - a.completedAt!.getTime())[0];
-
-      // Calculate total earned from this template
-      const totalEarned = instances
-        .filter((instance: ChoreInstance) => instance.completed)
-        .reduce((sum: number, instance: ChoreInstance) => sum + instance.amount, 0);
-
-      scheduleData[template.frequency].push({
-        template,
-        nextDueDate: nextDueInstance?.dueDate || null,
-        lastCompletedDate: lastCompletedInstance?.completedAt || null,
-        totalEarned
+    try {
+      const response = await fetch('/api/chores', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: newChoreTitle.trim(),
+          amount: newChoreAmount,
+          frequency: newChoreFrequency,
+          startDate: newChoreStartDate,
+        }),
       });
-    });
 
-    return scheduleData;
+      if (response.ok) {
+        // Reload data to get the new chore and its instances
+        await loadData();
+        
+        // Reset form
+        setNewChoreTitle('');
+        setNewChoreAmount('');
+        setNewChoreFrequency('daily');
+        setNewChoreStartDate(format(new Date(), 'yyyy-MM-dd'));
+      } else {
+        console.error('Failed to create chore');
+      }
+    } catch (error) {
+      console.error('Error creating chore:', error);
+    }
+  };
+
+  const completeChoreInstance = async (instanceId: string) => {
+    try {
+      const response = await fetch('/api/instances', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: instanceId,
+          action: 'complete',
+        }),
+      });
+
+      if (response.ok) {
+        // Reload instances to get updated data
+        const instancesResponse = await fetch('/api/instances');
+        const instances = await instancesResponse.json();
+        setChoreInstances(instances);
+      }
+    } catch (error) {
+      console.error('Error completing chore:', error);
+    }
+  };
+
+  const uncompleteChoreInstance = async (instanceId: string) => {
+    try {
+      const response = await fetch('/api/instances', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: instanceId,
+          action: 'uncomplete',
+        }),
+      });
+
+      if (response.ok) {
+        // Reload instances to get updated data
+        const instancesResponse = await fetch('/api/instances');
+        const instances = await instancesResponse.json();
+        setChoreInstances(instances);
+      }
+    } catch (error) {
+      console.error('Error uncompleting chore:', error);
+    }
+  };
+
+  const deleteChoreInstance = async (instanceId: string) => {
+    try {
+      const response = await fetch('/api/instances', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: instanceId,
+        }),
+      });
+
+      if (response.ok) {
+        // Reload instances to get updated data
+        const instancesResponse = await fetch('/api/instances');
+        const instances = await instancesResponse.json();
+        setChoreInstances(instances);
+      }
+    } catch (error) {
+      console.error('Error deleting chore instance:', error);
+    }
+  };
+
+  const handlePayout = async () => {
+    if (totalEarned <= 0) return;
+
+    try {
+      const response = await fetch('/api/payouts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: totalEarned.toString(),
+          notes: 'Payout from chore tracker',
+        }),
+      });
+
+      if (response.ok) {
+        // Reload data to get updated payouts
+        await loadData();
+        setShowPayoutModal(false);
+      }
+    } catch (error) {
+      console.error('Error creating payout:', error);
+    }
+  };
+
+  const getDueChoreInstances = () => {
+    const today = startOfDay(new Date());
+    return choreInstances.filter((instance: ChoreInstance) => 
+      !instance.completed && (isBefore(new Date(instance.dueDate), today) || isSameDay(new Date(instance.dueDate), today))
+    );
+  };
+
+  const getChoresForDate = (date: Date): ChoreInstance[] => {
+    return choreInstances.filter((instance: ChoreInstance) => {
+      if (instance.completed) return false;
+      return isSameDay(new Date(instance.dueDate), date);
+    });
   };
 
   const navigateDate = (direction: 'prev' | 'next') => {
@@ -300,48 +245,14 @@ export default function ChoreTracker() {
   const getChoresForSelectedDate = () => {
     return choreInstances.filter((instance: ChoreInstance) => {
       if (instance.completed) return false;
-      return isSameDay(instance.dueDate, selectedDate);
+      return isSameDay(new Date(instance.dueDate), selectedDate);
     });
   };
 
   const getCompletedChoresForSelectedDate = () => {
     return choreInstances.filter((instance: ChoreInstance) => {
       if (!instance.completed) return false;
-      return isSameDay(instance.completedAt!, selectedDate);
-    });
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      addChore();
-    }
-  };
-
-  const handlePayout = () => {
-    if (totalEarned <= 0) return;
-
-    const newPayout: Payout = {
-      id: crypto.randomUUID(),
-      amount: totalEarned,
-      date: new Date()
-    };
-
-    setPayouts((prev: Payout[]) => [...prev, newPayout]);
-    setTotalEarned(0);
-    setShowPayoutModal(false);
-  };
-
-  const getDueChoreInstances = () => {
-    const today = startOfDay(new Date());
-    return choreInstances.filter((instance: ChoreInstance) => 
-      !instance.completed && (isBefore(instance.dueDate, today) || isSameDay(instance.dueDate, today))
-    );
-  };
-
-  const getChoresForDate = (date: Date): ChoreInstance[] => {
-    return choreInstances.filter((instance: ChoreInstance) => {
-      if (instance.completed) return false;
-      return isSameDay(instance.dueDate, date);
+      return isSameDay(new Date(instance.completedAt!), selectedDate);
     });
   };
 
@@ -370,17 +281,17 @@ export default function ChoreTracker() {
       case 'week':
         const weekAgo = subDays(now, 7);
         return completedInstances.filter((instance: ChoreInstance) => 
-          instance.completedAt && isAfter(instance.completedAt, weekAgo)
+          instance.completedAt && isAfter(new Date(instance.completedAt), weekAgo)
         );
       case 'month':
         const monthAgo = subMonths(now, 1);
         return completedInstances.filter((instance: ChoreInstance) => 
-          instance.completedAt && isAfter(instance.completedAt, monthAgo)
+          instance.completedAt && isAfter(new Date(instance.completedAt), monthAgo)
         );
       case '3months':
         const threeMonthsAgo = subMonths(now, 3);
         return completedInstances.filter((instance: ChoreInstance) => 
-          instance.completedAt && isAfter(instance.completedAt, threeMonthsAgo)
+          instance.completedAt && isAfter(new Date(instance.completedAt), threeMonthsAgo)
         );
       default:
         return completedInstances;
@@ -390,6 +301,17 @@ export default function ChoreTracker() {
   const dueChoreInstances = getDueChoreInstances();
   const completedChoreInstances = choreInstances.filter((instance: ChoreInstance) => instance.completed);
   const filteredCompletedChores = getFilteredCompletedChores();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your chores...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -467,22 +389,11 @@ export default function ChoreTracker() {
               <DollarSign className="w-4 h-4" />
               Payout History
             </button>
-            <button
-              onClick={() => setView('schedule')}
-              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                view === 'schedule' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              Schedule
-            </button>
           </div>
         </div>
 
         {/* Add New Chore Form */}
-        {view !== 'payouts' && view !== 'completed' && view !== 'schedule' && (
+        {view !== 'payouts' && view !== 'completed' && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
             <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
               <Plus className="w-5 h-5" />
@@ -498,7 +409,6 @@ export default function ChoreTracker() {
                   type="text"
                   value={newChoreTitle}
                   onChange={(e) => setNewChoreTitle(e.target.value)}
-                  onKeyPress={handleKeyPress}
                   placeholder="e.g., Clean the kitchen, Take out trash..."
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-gray-900"
                 />
@@ -512,7 +422,6 @@ export default function ChoreTracker() {
                   type="number"
                   value={newChoreAmount}
                   onChange={(e) => setNewChoreAmount(e.target.value)}
-                  onKeyPress={handleKeyPress}
                   placeholder="5.00"
                   min="0"
                   step="0.01"
@@ -617,13 +526,13 @@ export default function ChoreTracker() {
                       <div className="flex-1">
                         <h3 className="font-medium text-gray-800">{instance.title}</h3>
                         <div className="flex gap-4 text-sm text-gray-500">
-                          <span>Due: {format(instance.dueDate, 'MMM d, yyyy')}</span>
+                          <span>Due: {format(new Date(instance.dueDate), 'MMM d, yyyy')}</span>
                           <span className="capitalize">{instance.frequency === 'one-time' ? 'One Time' : instance.frequency}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-semibold text-green-600">
-                          ${instance.amount.toFixed(2)}
+                          ${parseFloat(instance.amount).toFixed(2)}
                         </span>
                         <button
                           onClick={() => deleteChoreInstance(instance.id)}
@@ -659,13 +568,13 @@ export default function ChoreTracker() {
                       <div className="flex-1">
                         <h3 className="font-medium text-gray-800">{instance.title}</h3>
                         <div className="flex gap-4 text-sm text-gray-500">
-                          <span>Completed: {instance.completedAt ? format(instance.completedAt, 'MMM d, yyyy \'at\' h:mm a') : 'Unknown'}</span>
+                          <span>Completed: {instance.completedAt ? format(new Date(instance.completedAt), 'MMM d, yyyy \'at\' h:mm a') : 'Unknown'}</span>
                           <span className="capitalize">{instance.frequency === 'one-time' ? 'One Time' : instance.frequency}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-semibold text-green-600">
-                          ${instance.amount.toFixed(2)}
+                          ${parseFloat(instance.amount).toFixed(2)}
                         </span>
                         <button
                           onClick={(e) => {
@@ -745,7 +654,7 @@ export default function ChoreTracker() {
                         <div
                           key={instance.id}
                           className="text-xs p-1 bg-blue-100 text-blue-800 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors"
-                          title={`${instance.title} - $${instance.amount.toFixed(2)}`}
+                          title={`${instance.title} - $${parseFloat(instance.amount).toFixed(2)}`}
                           onClick={() => completeChoreInstance(instance.id)}
                         >
                           {instance.title}
@@ -761,319 +670,6 @@ export default function ChoreTracker() {
                 );
               })}
             </div>
-          </div>
-        ) : view === 'schedule' ? (
-          /* Schedule View */
-          <div className="bg-white rounded-2xl shadow-lg p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-6 flex items-center gap-2">
-              <Calendar className="w-5 h-5" />
-              Chore Schedule
-            </h2>
-            
-            {(() => {
-              const scheduleData = getScheduleData();
-              const hasAnyChores = Object.values(scheduleData).some(chores => chores.length > 0);
-              
-              if (!hasAnyChores) {
-                return (
-                  <p className="text-gray-500 text-center py-8">
-                    No active chores found. Add some chores to see them in your schedule!
-                  </p>
-                );
-              }
-
-              return (
-                <div className="space-y-8">
-                  {/* One Time Chores */}
-                  {scheduleData['one-time'].length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">One Time Chores</h3>
-                      <div className="space-y-3">
-                        {scheduleData['one-time'].map(({ template, nextDueDate, lastCompletedDate, totalEarned }) => (
-                          <div key={template.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                            <div className="flex-1">
-                              <h4 className="font-medium text-gray-800">{template.title}</h4>
-                              <div className="flex gap-4 text-sm text-gray-500 mt-1">
-                                {nextDueDate && (
-                                  <span>Next Due: {format(nextDueDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {lastCompletedDate && (
-                                  <span>Last Completed: {format(lastCompletedDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {totalEarned > 0 && (
-                                  <span>Total Earned: ${totalEarned.toFixed(2)}</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {editingTemplateId === template.id ? (
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    value={editingAmount || ''}
-                                    onChange={(e) => setEditingAmount(e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-gray-900"
-                                    min="0"
-                                    step="0.01"
-                                  />
-                                  <button
-                                    onClick={() => updateChoreAmount(template.id, parseFloat(editingAmount || '0'))}
-                                    className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(null);
-                                      setEditingTemplateId(null);
-                                    }}
-                                    className="px-2 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <span className="text-lg font-semibold text-green-600">
-                                    ${template.amount.toFixed(2)}
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(template.amount.toString());
-                                      setEditingTemplateId(template.id);
-                                    }}
-                                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="Edit amount"
-                                  >
-                                    <DollarSign className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Daily Chores */}
-                  {scheduleData['daily'].length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Daily Chores</h3>
-                      <div className="space-y-3">
-                        {scheduleData['daily'].map(({ template, nextDueDate, lastCompletedDate, totalEarned }) => (
-                          <div key={template.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                            <div className="flex-1">
-                              <h4 className="font-medium text-gray-800">{template.title}</h4>
-                              <div className="flex gap-4 text-sm text-gray-500 mt-1">
-                                {nextDueDate && (
-                                  <span>Next Due: {format(nextDueDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {lastCompletedDate && (
-                                  <span>Last Completed: {format(lastCompletedDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {totalEarned > 0 && (
-                                  <span>Total Earned: ${totalEarned.toFixed(2)}</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {editingTemplateId === template.id ? (
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    value={editingAmount || ''}
-                                    onChange={(e) => setEditingAmount(e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-gray-900"
-                                    min="0"
-                                    step="0.01"
-                                  />
-                                  <button
-                                    onClick={() => updateChoreAmount(template.id, parseFloat(editingAmount || '0'))}
-                                    className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(null);
-                                      setEditingTemplateId(null);
-                                    }}
-                                    className="px-2 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <span className="text-lg font-semibold text-green-600">
-                                    ${template.amount.toFixed(2)}
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(template.amount.toString());
-                                      setEditingTemplateId(template.id);
-                                    }}
-                                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="Edit amount"
-                                  >
-                                    <DollarSign className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Weekly Chores */}
-                  {scheduleData['weekly'].length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Weekly Chores</h3>
-                      <div className="space-y-3">
-                        {scheduleData['weekly'].map(({ template, nextDueDate, lastCompletedDate, totalEarned }) => (
-                          <div key={template.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                            <div className="flex-1">
-                              <h4 className="font-medium text-gray-800">{template.title}</h4>
-                              <div className="flex gap-4 text-sm text-gray-500 mt-1">
-                                {nextDueDate && (
-                                  <span>Next Due: {format(nextDueDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {lastCompletedDate && (
-                                  <span>Last Completed: {format(lastCompletedDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {totalEarned > 0 && (
-                                  <span>Total Earned: ${totalEarned.toFixed(2)}</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {editingTemplateId === template.id ? (
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    value={editingAmount || ''}
-                                    onChange={(e) => setEditingAmount(e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-gray-900"
-                                    min="0"
-                                    step="0.01"
-                                  />
-                                  <button
-                                    onClick={() => updateChoreAmount(template.id, parseFloat(editingAmount || '0'))}
-                                    className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(null);
-                                      setEditingTemplateId(null);
-                                    }}
-                                    className="px-2 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <span className="text-lg font-semibold text-green-600">
-                                    ${template.amount.toFixed(2)}
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(template.amount.toString());
-                                      setEditingTemplateId(template.id);
-                                    }}
-                                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="Edit amount"
-                                  >
-                                    <DollarSign className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Monthly Chores */}
-                  {scheduleData['monthly'].length > 0 && (
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Monthly Chores</h3>
-                      <div className="space-y-3">
-                        {scheduleData['monthly'].map(({ template, nextDueDate, lastCompletedDate, totalEarned }) => (
-                          <div key={template.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                            <div className="flex-1">
-                              <h4 className="font-medium text-gray-800">{template.title}</h4>
-                              <div className="flex gap-4 text-sm text-gray-500 mt-1">
-                                {nextDueDate && (
-                                  <span>Next Due: {format(nextDueDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {lastCompletedDate && (
-                                  <span>Last Completed: {format(lastCompletedDate, 'MMM d, yyyy')}</span>
-                                )}
-                                {totalEarned > 0 && (
-                                  <span>Total Earned: ${totalEarned.toFixed(2)}</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {editingTemplateId === template.id ? (
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    value={editingAmount || ''}
-                                    onChange={(e) => setEditingAmount(e.target.value)}
-                                    className="w-20 px-2 py-1 border border-gray-300 rounded text-gray-900"
-                                    min="0"
-                                    step="0.01"
-                                  />
-                                  <button
-                                    onClick={() => updateChoreAmount(template.id, parseFloat(editingAmount || '0'))}
-                                    className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(null);
-                                      setEditingTemplateId(null);
-                                    }}
-                                    className="px-2 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <span className="text-lg font-semibold text-green-600">
-                                    ${template.amount.toFixed(2)}
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      setEditingAmount(template.amount.toString());
-                                      setEditingTemplateId(template.id);
-                                    }}
-                                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="Edit amount"
-                                  >
-                                    <DollarSign className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
           </div>
         ) : view === 'completed' ? (
           /* Completed Chores View */
@@ -1149,13 +745,13 @@ export default function ChoreTracker() {
                     <div className="flex-1">
                       <h3 className="font-medium text-gray-800">{instance.title}</h3>
                       <div className="flex gap-4 text-sm text-gray-500">
-                        <span>Completed: {instance.completedAt ? format(instance.completedAt, 'MMM d, yyyy \'at\' h:mm a') : 'Unknown'}</span>
+                        <span>Completed: {instance.completedAt ? format(new Date(instance.completedAt), 'MMM d, yyyy \'at\' h:mm a') : 'Unknown'}</span>
                         <span className="capitalize">{instance.frequency === 'one-time' ? 'One Time' : instance.frequency}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-lg font-semibold text-green-600">
-                        ${instance.amount.toFixed(2)}
+                        ${parseFloat(instance.amount).toFixed(2)}
                       </span>
                       <button
                         onClick={(e) => {
@@ -1196,13 +792,13 @@ export default function ChoreTracker() {
                       <div>
                         <h3 className="font-medium text-gray-800">Payout</h3>
                         <p className="text-sm text-gray-500">
-                          {format(payout.date, 'MMM d, yyyy \'at\' h:mm a')}
+                          {format(new Date(payout.date), 'MMM d, yyyy \'at\' h:mm a')}
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <span className="text-xl font-bold text-green-600">
-                        ${payout.amount.toFixed(2)}
+                        ${parseFloat(payout.amount).toFixed(2)}
                       </span>
                     </div>
                   </div>
