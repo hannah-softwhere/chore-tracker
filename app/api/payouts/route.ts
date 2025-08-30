@@ -22,15 +22,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payout amount' }, { status: 400 });
     }
 
+    // Validate amount is a valid number
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return NextResponse.json({ error: 'Invalid payout amount' }, { status: 400 });
+    }
+
     // Check if there's enough earned money
     const totalEarned = await getTotalEarned();
-    if (amount > totalEarned) {
+    if (amountNum > totalEarned) {
       return NextResponse.json({ error: 'Payout amount exceeds total earned' }, { status: 400 });
     }
 
     // Create the payout
     const payout: NewPayout = {
-      amount: parseFloat(amount),
+      amount: amountNum.toString(), // Drizzle decimal expects string
       notes,
     };
 

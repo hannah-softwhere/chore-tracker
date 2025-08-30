@@ -43,7 +43,7 @@ export async function generateChoreInstances(templateId: string, startDate: Date
       title: template[0].title,
       amount: template[0].amount,
       frequency: template[0].frequency,
-      dueDate: currentDate,
+      dueDate: currentDate.toISOString().split('T')[0], // Convert Date to YYYY-MM-DD string
       completed: false,
     };
     
@@ -81,11 +81,12 @@ export async function getChoreInstances() {
 }
 
 export async function getChoresForDate(date: Date) {
-  return await db.select().from(choreInstances).where(eq(choreInstances.dueDate, date)).orderBy(asc(choreInstances.title));
+  const dateString = date.toISOString().split('T')[0]; // Convert Date to YYYY-MM-DD string
+  return await db.select().from(choreInstances).where(eq(choreInstances.dueDate, dateString)).orderBy(asc(choreInstances.title));
 }
 
 export async function getDueChores() {
-  const today = new Date();
+  const today = new Date().toISOString().split('T')[0]; // Convert to YYYY-MM-DD string
   return await db.select().from(choreInstances).where(
     and(
       eq(choreInstances.completed, false),

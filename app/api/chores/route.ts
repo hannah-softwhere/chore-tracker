@@ -22,10 +22,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Validate amount is a valid number
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum < 0) {
+      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+    }
+
     // Create the chore template
     const template: NewChoreTemplate = {
       title,
-      amount: parseFloat(amount),
+      amount: amountNum.toString(), // Drizzle decimal expects string
       frequency,
     };
 
