@@ -24,6 +24,7 @@ export const choreInstances = pgTable('chore_instances', {
   dueDate: date('due_date').notNull(),
   completed: boolean('completed').default(false).notNull(),
   completedAt: timestamp('completed_at'),
+  paidOut: boolean('paid_out').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

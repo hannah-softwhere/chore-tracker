@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPayout, getPayouts, getTotalEarned } from '@/lib/db/services';
+import { createPayout, getPayouts, getTotalEarned, markCompletedChoresAsPaidOut } from '@/lib/db/services';
 import type { NewPayout } from '@/lib/db/schema';
 
 export async function GET() {
@@ -41,6 +41,10 @@ export async function POST(request: NextRequest) {
     };
 
     const newPayout = await createPayout(payout);
+    
+    // Mark all completed chores as paid out
+    await markCompletedChoresAsPaidOut();
+    
     return NextResponse.json(newPayout, { status: 201 });
   } catch (error) {
     console.error('Error creating payout:', error);

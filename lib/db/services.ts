@@ -155,9 +155,25 @@ export async function getPayouts() {
 export async function getTotalEarned() {
   const result = await db.select({ total: choreInstances.amount })
     .from(choreInstances)
-    .where(eq(choreInstances.completed, true));
+    .where(
+      and(
+        eq(choreInstances.completed, true),
+        eq(choreInstances.paidOut, false)
+      )
+    );
   
   return result.reduce((sum, row) => sum + Number(row.total), 0);
+}
+
+export async function markCompletedChoresAsPaidOut() {
+  await db.update(choreInstances)
+    .set({ paidOut: true })
+    .where(
+      and(
+        eq(choreInstances.completed, true),
+        eq(choreInstances.paidOut, false)
+      )
+    );
 }
 
 export async function getChoreStatistics() {
