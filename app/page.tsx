@@ -25,6 +25,7 @@ interface ChoreInstance {
   dueDate: string;
   completed: boolean;
   completedAt?: string;
+  paidOut: boolean;
 }
 
 interface Payout {
@@ -84,7 +85,7 @@ export default function ChoreTracker() {
   // Calculate total earned whenever chore instances change
   useEffect(() => {
     const total = choreInstances
-      .filter((instance: ChoreInstance) => instance.completed)
+      .filter((instance: ChoreInstance) => instance.completed && !instance.paidOut)
       .reduce((sum: number, instance: ChoreInstance) => sum + parseFloat(instance.amount), 0);
     setTotalEarned(total);
   }, [choreInstances]);
